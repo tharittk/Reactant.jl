@@ -2359,4 +2359,50 @@ end
     return TracedRArray{T, length(reduced_shape)}((), res, reduced_shape)
 end
 
+@noinline function map(
+    fn::Function,
+    xs::TracedRArray{T, N}...;
+    location=mlir_stacktrace("map", @__FILE__, @__LINE__)
+) where {T, N}
+
+    result_type = mlir_type(TracedRArray{T, N}, size(xs[1]))
+    
+    sample_inputs = [Reactant.ConcretePJRTNumber(T(0)) for _ in xs]
+
+    func =
+        Reactant.TracedUtils.make_mlir_fn(
+            fn,
+            sample_inputs,
+            (),
+            "map_fn";
+            args_in_result=:none,
+            return_dialect=:stablehlo,
+        ).f
+    @assert MLIR.IR.nregions(func) == 1
+    fn_name = String(
+        MLIR.IR.attr(func, String(MLIR.API.mlirSymbolTableGetSymbolAttributeName()))
+    )
+
+    @assert fn_name == "map_fn"
+    ftype_attr = MLIR.IR.attr(func, "function_type")
+    ftype = MLIR.IR.Type(ftype_attr)
+    @assert MLIR.IR.result(ftype) == MLIR.IR.TensorType((), MLIR.IR.Type(T)) error (
+        "$fn return type is not tensor<i1>"
+    )
+
+    fn = MLIR.IR.Region()
+    MLIR.API.mlirRegionTakeBody(fn, MLIR.IR.region(func, 1))
+    MLIR.IR.rmfromparent!(func)
+    
+    dimensions = MLIR.IR.Attribute(collect(0:(N-1))) 
+    
+    res = MLIR.IR.result(stablehlo.map(
+        [x.mlir_data for x in xs];
+        result_0=result_type, dimensions=dimensions, computation=fn, location=location
+    ))
+
+    return TracedRArray{T, N}((), res, size(xs[1]))
+end
+
+
 end # module Ops
