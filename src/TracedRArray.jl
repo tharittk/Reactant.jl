@@ -462,20 +462,15 @@ for (jlop, hloop, hlocomp, merge) in
 end
 
 function Base.mapreduce(
-    @nospecialize(f),
+    f::F, # type parameter so that it recompiles for a different (anonymous) function
     @nospecialize(op),
-    @nospecialize(A::AnyTracedRArray{T, N});
+    @nospecialize(A::AnyTracedRArray{T,N});
     dims=:,
     init=nothing,
-) where {T, N}
-
+) where {T,N,F}
     A = materialize_traced_array(A)
-    
-    # inp = [broadcast(f, A).mlir_data]
-    # inp = [broadcast(f, A)]
-    inp = broadcast(f, A)
-    @show inp
-    @show eltype(inp)
+
+    inp = Ops.map(f, A)
 
     if dims isa Int
         dims = [dims]
@@ -484,7 +479,7 @@ function Base.mapreduce(
     else
         dims = collect(dims)
     end
-    
+
     if init === nothing
         if op === min
             init = typemax(T)
@@ -493,19 +488,12 @@ function Base.mapreduce(
         else
             init = Base.reduce_empty(Base.BottomRF(op), T)
         end
-   
     end
-
     init = Ops.constant(init)
-    @show init
-    @show dims
-    @show op
-    # return inp
-  
-    return Ops.reduce(inp, init, dims, op)
 
-end    
-    
+    return Ops.reduce(inp, init, dims, op)
+end
+
 function Base.mapreducedim!(
     @nospecialize(f),
     @nospecialize(op),

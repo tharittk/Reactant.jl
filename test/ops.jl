@@ -1076,31 +1076,30 @@ end
     # stablehlo reduce collapse the dimension so that (1,3) beomces (3, )
     # while Julia reduce retains (1, 3). The test will fail despite elements being equal
     function squeeze_dims(r)
-        return dropdims(r,dims=tuple(findall(size(r).==1)...))
+        return dropdims(r; dims=tuple(findall(size(r) .== 1)...))
     end
 
     # Floating point operation is not associative
     A = rand(Int64, 3, 4, 5)
     A_ra = Reactant.to_rarray(A)
-    init = 1 
+    init = 1
     init_ra = @jit Reactant.Ops.constant(init)
-    dims = [2]    
+    dims = [2]
     r_hlo = @jit Reactant.Ops.reduce(A_ra, init_ra, dims, *)
     r = reduce(*, A; dims=dims, init=init)
     @test r_hlo ≈ squeeze_dims(r)
 
-    dims = [1,3]
-    init = 0 
+    dims = [1, 3]
+    init = 0
     init_ra = @jit Reactant.Ops.constant(init)
     r_hlo = @jit Reactant.Ops.reduce(A_ra, init_ra, dims, +)
     r = reduce(+, A; dims=dims, init=init)
     @test r_hlo ≈ squeeze_dims(r)
 
-    dims = [1,2,3]
+    dims = [1, 2, 3]
     r_hlo = @jit Reactant.Ops.reduce(A_ra, init_ra, dims, +)
     r = reduce(+, A; dims=dims, init=init)
     @test r_hlo ≈ squeeze_dims(r)
-
 end
 
 @testset "map" begin
@@ -1108,7 +1107,7 @@ end
     B = rand(Float64, 3, 4, 5)
     C = rand(Float64, 3, 4, 5)
     D = rand(Float64, 3, 4, 5)
-    
+
     A_ra = Reactant.to_rarray(A)
     B_ra = Reactant.to_rarray(B)
     C_ra = Reactant.to_rarray(C)
@@ -1116,7 +1115,7 @@ end
 
     m_hlo = @jit Reactant.Ops.map(+, A_ra, B_ra)
     @test m_hlo ≈ map(+, A, B)
- 
+
     m_hlo = @jit Reactant.Ops.map(+, A_ra, B_ra, C_ra)
     @test m_hlo ≈ map(+, A, B, C)
 
@@ -1124,14 +1123,44 @@ end
     @test m_hlo ≈ map(*, A, B, C, D)
 
     # anonymous function
-    E = [[1 2];[4 3]]
+    E = [[1 2]; [4 3]]
     E_ra = Reactant.to_rarray(E)
     m_hlo = @jit Reactant.Ops.map((x) -> x^2, E_ra)
-    @test m_hlo ≈ map( (x) -> x^2, E)
+    @test m_hlo ≈ map((x) -> x^2, E)
 
-    F = [[5 6];[7 8]]
+    F = [[5 6]; [7 8]]
     F_ra = Reactant.to_rarray(F)
     m_hlo = @jit Reactant.Ops.map((x, y) -> x^2 + y, E_ra, F_ra)
-    @test m_hlo ≈ map((x, y) -> x^2 + y, E, F)   
+    @test m_hlo ≈ map((x, y) -> x^2 + y, E, F)
 end
 
+@testset "mapreduce" begin
+    function squeeze_dims(r)
+        return dropdims(r; dims=tuple(findall(size(r) .== 1)...))
+    end
+
+    A = rand(Float64, 3, 4, 5)
+    B = rand(Float64, 3, 4, 5)
+    C = rand(Float64, 3, 4, 5)
+    D = rand(Float64, 3, 4, 5)
+
+    A_ra = Reactant.to_rarray(A)
+    B_ra = Reactant.to_rarray(B)
+    C_ra = Reactant.to_rarray(C)
+    D_ra = Reactant.to_rarray(D)
+
+    mr_ra = mapreduce(x -> 3 * x + 1.2, *, A_ra; dims=2)
+    @test mr_ra ≈ squeeze_dims(mapreduce(x -> 3 * x + 1.2, *, A; dims=2))
+
+    mr_ra = @jit mapreduce(x -> x^3, +, A_ra; dims=1:2)
+    @test mr_ra ≈ squeeze_dims(mapreduce(x -> x^3, +, A; dims=1:2))
+
+    mr_ra = @jit mapreduce(x -> 3 * x + 1.2, +, A_ra; dims=:)
+    @test mr_ra ≈ mapreduce(x -> 3 * x + 1.2, +, A; dims=:)
+
+    mr_ra = @jit mapreduce(x -> 3 * x + 1.2, max, A_ra; dims=:)
+    @test mr_ra ≈ mapreduce(x -> 3 * x + 1.2, max, A; dims=:)
+
+    mr_ra = @jit mapreduce(x -> 3 * x + 1.2, min, A_ra; dims=2:3)
+    @test mr_ra ≈ mapreduce(x -> 3 * x + 1.2, min, A; dims=2:3)
+end
